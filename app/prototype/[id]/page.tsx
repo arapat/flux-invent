@@ -57,6 +57,8 @@ export default function PrototypePage() {
   const [showPdf, setShowPdf] = useState(false);
   const [numPages, setNumPages] = useState<number | null>(null);
   const [selectedImage, setSelectedImage] = useState<number | null>(null);
+  const [selectedImageForGen, setSelectedImageForGen] = useState<number | null>(null);
+  const [generatedImageUrl, setGeneratedImageUrl] = useState<string>('');
 
   const steps: GenerationStep[] = [
     {
@@ -138,6 +140,71 @@ Product photography style, high detail, 8K resolution, photorealistic rendering.
 
       setProgress(100);
       setImageUrl(data.url);
+      setStatus(GenerationStatus.COMPLETE);
+
+    } catch (err) {
+      console.error('Generation error:', err);
+      setStatus(GenerationStatus.ERROR);
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
+    }
+  };
+
+  const generateWithSelectedImage = async () => {
+    if (!patent || selectedImageForGen === null || !patent.images[selectedImageForGen]) return;
+
+    try {
+      setError('');
+      setStatus(GenerationStatus.PREPARING);
+      setProgress(10);
+
+      // Fetch the image from local path
+      const imagePath = patent.images[selectedImageForGen].local_path;
+      const imageResponse = await fetch(imagePath);
+      const imageBlob = await imageResponse.blob();
+
+      setProgress(25);
+
+      // Create FormData
+      const formData = new FormData();
+
+      // Add meta field
+      const meta = {
+        patent_url: patent.page_url,
+        patent_id: patent.id,
+        title: patent.title,
+        abstract: patent.abstract,
+      };
+      formData.append('meta', JSON.stringify(meta));
+
+      // Add image field
+      const imageFile = new File([imageBlob], `patent-image-${selectedImageForGen}.png`, {
+        type: imageBlob.type || 'image/png'
+      });
+      formData.append('image', imageFile);
+
+      setProgress(35);
+      setStatus(GenerationStatus.GENERATING);
+
+      // Call /api/gen2
+      const response = await fetch('/api/gen2', {
+        method: 'POST',
+        body: formData,
+      });
+
+      setProgress(70);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to generate prototype');
+      }
+
+      setStatus(GenerationStatus.UPLOADING);
+      setProgress(85);
+
+      const data = await response.json();
+
+      setProgress(100);
+      setGeneratedImageUrl(data.s3Url);
       setStatus(GenerationStatus.COMPLETE);
 
     } catch (err) {
@@ -284,23 +351,48 @@ Product photography style, high detail, 8K resolution, photorealistic rendering.
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
                   Patent Figures ({patent.images.length})
                 </label>
+                {selectedImageForGen !== null && (
+                  <span className="text-xs font-bold text-emerald-600">
+                    Figure {selectedImageForGen + 1} Selected
+                  </span>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {patent.images.map((img, idx) => (
                   <div
                     key={idx}
-                    onClick={() => setSelectedImage(idx)}
-                    className="relative aspect-square rounded-lg overflow-hidden bg-slate-100 border-2 border-slate-200 hover:border-blue-400 group/img cursor-pointer transition-all"
+                    className="relative aspect-square rounded-lg overflow-hidden bg-slate-100 border-2 transition-all cursor-pointer group/img"
+                    style={{
+                      borderColor: selectedImageForGen === idx ? '#10b981' : '#e2e8f0'
+                    }}
                   >
-                    <Image
-                      src={img.local_path}
-                      alt={`${patent.title} - Figure ${idx + 1}`}
-                      fill
-                      className="object-contain group-hover/img:scale-105 transition-transform duration-300"
-                      sizes="(max-width: 768px) 50vw, 25vw"
-                    />
-                    <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/10 transition-colors flex items-center justify-center">
-                      <Eye className="w-6 h-6 text-white opacity-0 group-hover/img:opacity-100 transition-opacity" />
+                    <div onClick={() => setSelectedImage(idx)} className="w-full h-full">
+                      <Image
+                        src={img.local_path}
+                        alt={`${patent.title} - Figure ${idx + 1}`}
+                        fill
+                        className="object-contain group-hover/img:scale-105 transition-transform duration-300"
+                        sizes="(max-width: 768px) 50vw, 25vw"
+                      />
+                      <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/10 transition-colors flex items-center justify-center">
+                        <Eye className="w-6 h-6 text-white opacity-0 group-hover/img:opacity-100 transition-opacity" />
+                      </div>
+                    </div>
+                    {/* Selection checkbox */}
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedImageForGen(selectedImageForGen === idx ? null : idx);
+                      }}
+                      className="absolute top-2 right-2 w-6 h-6 rounded-md bg-white shadow-md border-2 flex items-center justify-center cursor-pointer hover:scale-110 transition-transform z-10"
+                      style={{
+                        borderColor: selectedImageForGen === idx ? '#10b981' : '#cbd5e1',
+                        backgroundColor: selectedImageForGen === idx ? '#10b981' : '#ffffff'
+                      }}
+                    >
+                      {selectedImageForGen === idx && (
+                        <CheckCircle2 className="w-4 h-4 text-white" />
+                      )}
                     </div>
                   </div>
                 ))}
@@ -318,14 +410,17 @@ Product photography style, high detail, 8K resolution, photorealistic rendering.
               </div>
               <h3 className="text-xl font-bold text-slate-900 mb-2">Ready to Prototype</h3>
               <p className="text-sm text-slate-600 mb-6 leading-relaxed">
-                Generate a high-quality visual prototype of this patent using advanced AI technology.
+                {selectedImageForGen !== null
+                  ? `Generate a prototype based on Figure ${selectedImageForGen + 1} using advanced AI image editing.`
+                  : 'Select a patent figure on the left, then generate a high-quality visual prototype.'}
               </p>
               <button
-                onClick={generatePrototype}
-                className="group/btn inline-flex items-center gap-2 px-6 py-3 bg-slate-900 text-white font-bold rounded-xl shadow-lg hover:shadow-xl hover:bg-slate-800 transition-all active:scale-[0.98]"
+                onClick={selectedImageForGen !== null ? generateWithSelectedImage : generatePrototype}
+                disabled={selectedImageForGen === null}
+                className="group/btn inline-flex items-center gap-2 px-6 py-3 bg-slate-900 text-white font-bold rounded-xl shadow-lg hover:shadow-xl hover:bg-slate-800 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-lg"
               >
                 <Zap className="w-5 h-5" />
-                <span>Generate Prototype</span>
+                <span>{selectedImageForGen !== null ? 'Generate from Selected Image' : 'Select an Image First'}</span>
               </button>
             </GlassCard>
           )}
@@ -376,7 +471,7 @@ Product photography style, high detail, 8K resolution, photorealistic rendering.
             </GlassCard>
           )}
 
-          {status === GenerationStatus.COMPLETE && imageUrl && (
+          {status === GenerationStatus.COMPLETE && (imageUrl || generatedImageUrl) && (
             <GlassCard className="p-5 animate-fade-in">
               <div className="flex items-center gap-2 mb-4">
                 <CheckCircle2 className="w-5 h-5 text-emerald-600" />
@@ -385,7 +480,7 @@ Product photography style, high detail, 8K resolution, photorealistic rendering.
 
               <div className="rounded-lg overflow-hidden border-2 border-slate-200 shadow-lg mb-4">
                 <img
-                  src={imageUrl}
+                  src={generatedImageUrl || imageUrl}
                   alt={`Prototype of ${patent.title}`}
                   className="w-full h-auto"
                 />
@@ -393,13 +488,13 @@ Product photography style, high detail, 8K resolution, photorealistic rendering.
 
               <div className="flex gap-2">
                 <button
-                  onClick={generatePrototype}
+                  onClick={selectedImageForGen !== null ? generateWithSelectedImage : generatePrototype}
                   className="flex-1 py-2.5 px-4 text-sm bg-slate-100 text-slate-900 font-bold rounded-lg hover:bg-slate-200 transition-all"
                 >
                   Regenerate
                 </button>
                 <a
-                  href={imageUrl}
+                  href={generatedImageUrl || imageUrl}
                   download
                   className="flex-1 py-2.5 px-4 text-sm bg-slate-900 text-white font-bold rounded-lg hover:bg-slate-800 transition-all text-center"
                 >
@@ -417,7 +512,7 @@ Product photography style, high detail, 8K resolution, photorealistic rendering.
                   <h3 className="text-lg font-bold text-red-900 mb-2">Generation Failed</h3>
                   <p className="text-sm text-red-700 mb-4">{error}</p>
                   <button
-                    onClick={generatePrototype}
+                    onClick={selectedImageForGen !== null ? generateWithSelectedImage : generatePrototype}
                     className="px-5 py-2.5 text-sm bg-slate-900 text-white font-bold rounded-lg hover:bg-slate-800 transition-all"
                   >
                     Try Again

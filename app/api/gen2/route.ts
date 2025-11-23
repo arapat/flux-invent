@@ -69,6 +69,7 @@ JSON structure:
       "color_palette": string[]
     }
   ],
+  additionalUserRequest: string,
   "style": string,
   "color_palette": string[],
   "lighting": string,
