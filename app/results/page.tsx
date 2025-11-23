@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Patent, LoadingState } from '@/lib/types';
 import PatentCard from '@/components/PatentCard';
@@ -8,7 +8,7 @@ import SearchInput from '@/components/SearchInput';
 import { ArrowLeft, RefreshCw, AlertCircle } from 'lucide-react';
 import { MOCK_PATENTS } from '@/lib/constants';
 
-export default function Results() {
+function ResultsContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const query = searchParams.get('q') || '';
@@ -109,5 +109,32 @@ export default function Results() {
         </>
       )}
     </div>
+  );
+}
+
+export default function Results() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen pt-28 pb-12 px-4 md:px-8 max-w-7xl mx-auto">
+        <div className="flex flex-col lg:flex-row gap-8 lg:items-center justify-between mb-16 animate-fade-in">
+          <div className="flex items-center gap-6">
+            <button className="group w-12 h-12 flex items-center justify-center rounded-full bg-white/5 border border-white/5">
+              <ArrowLeft className="w-5 h-5 text-gray-300" />
+            </button>
+            <div>
+              <h2 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-1">Loading</h2>
+              <h1 className="text-3xl md:text-4xl font-display font-bold text-white tracking-tight">Results...</h1>
+            </div>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-96 rounded-ios-lg bg-white/5 animate-pulse border border-white/5"></div>
+          ))}
+        </div>
+      </div>
+    }>
+      <ResultsContent />
+    </Suspense>
   );
 }
